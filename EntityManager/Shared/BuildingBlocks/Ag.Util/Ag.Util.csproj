@@ -1,0 +1,12 @@
+<!-- PURPOSE: shared JSON helpers copied from the real ag-kit repo
+     (Shared/BuildingBlocks/Ag.Util) - just the two files the real Application
+     queries actually use (camelCase conversion + default picture URL). -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

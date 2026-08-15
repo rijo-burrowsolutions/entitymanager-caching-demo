@@ -1,0 +1,27 @@
+<!-- PURPOSE: the Application layer - the Queries (business logic + caching
+     opt-in). References Domain (for repository interfaces) and Ag.Cache (for
+     ICacheableQuery/CacheKeyBuilder), but never references EF Core or Redis
+     directly - those are Infrastructure's job. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EntityManager.Domain\EntityManager.Domain.csproj" />
+    <ProjectReference Include="..\..\..\Shared\Infrastructure\Ag.Cache\Ag.Cache.csproj" />
+    <ProjectReference Include="..\..\..\Shared\BuildingBlocks\Ag.Abstractions\Ag.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\Shared\BuildingBlocks\Ag.Util\Ag.Util.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Gives us IRequest/IRequestHandler and ICacheableQuery's Mediator types -->
+    <PackageReference Include="Mediator.Abstractions" Version="3.0.2" />
+    <!-- IConfiguration - the handlers read CDN:Url for the default picture URL -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

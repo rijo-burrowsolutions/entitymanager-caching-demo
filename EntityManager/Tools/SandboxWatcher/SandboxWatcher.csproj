@@ -1,0 +1,25 @@
+<!-- PURPOSE: a C# equivalent of cache-worker/src/watcher.js, used ONLY
+     against the local idc_ety_sandbox LocalDB copy - Node's mssql package
+     can't reach SQL Server LocalDB (it only speaks named pipes, which
+     tedious doesn't support), but .NET's SqlClient has native LocalDB
+     support. Polls Agent/Office/Company for real LASTMODIFIED changes and
+     deletes the matching Redis "get" key, using the SAME CacheKeyBuilder
+     the real API uses - so it produces byte-for-byte identical keys. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shared\Infrastructure\Ag.Cache\Ag.Cache.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.2" />
+  </ItemGroup>
+
+</Project>

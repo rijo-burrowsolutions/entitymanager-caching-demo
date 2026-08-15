@@ -1,0 +1,24 @@
+<!-- PURPOSE: the shared caching library. Lives under Shared/Infrastructure
+     because it directly depends on a specific technology (Redis) - exactly
+     the kind of thing Infrastructure layers own, not Application layers. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Talks to Redis -->
+    <PackageReference Include="StackExchange.Redis" Version="2.8.24" />
+    <!-- Gives us IPipelineBehavior/IRequest, needed to plug into Mediator's pipeline -->
+    <PackageReference Include="Mediator.Abstractions" Version="3.0.2" />
+    <!-- Lets AgCachingServiceExtensions.cs read the "Redis" section from appsettings.json -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" />
+    <!-- Lets AgCachingServiceExtensions.cs register the Redis connection with DI -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

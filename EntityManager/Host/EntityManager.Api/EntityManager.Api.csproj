@@ -1,0 +1,25 @@
+<!-- PURPOSE: the Host project - the only runnable Web SDK project in this
+     demo. Pulls together Infrastructure (DB + Mediator + caching),
+     Presentation (endpoints), and Ag.Cache (Redis connection). -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Microsoft.Data.SqlClient needs full ICU/globalization data to talk to
+         real SQL Server - InvariantGlobalization (fine for SQLite) breaks it. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Modules\EntityManager\EntityManager.Infrastructure\EntityManager.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\EntityManager\EntityManager.Presentation\EntityManager.Presentation.csproj" />
+    <ProjectReference Include="..\..\Shared\Infrastructure\Ag.Cache\Ag.Cache.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Swagger UI - lets you click-test every endpoint from the browser -->
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
+  </ItemGroup>
+
+</Project>

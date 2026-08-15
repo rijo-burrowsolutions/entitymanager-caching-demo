@@ -1,0 +1,31 @@
+<!-- PURPOSE: the Infrastructure layer - real technology lives here (EF Core +
+     SQL Server, the Mediator source generator, the DI wiring). References
+     Domain (implements its repository interfaces) and Application (needs
+     the query types to configure Mediator's assembly scan). -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EntityManager.Domain\EntityManager.Domain.csproj" />
+    <ProjectReference Include="..\EntityManager.Application\EntityManager.Application.csproj" />
+    <ProjectReference Include="..\..\..\Shared\Infrastructure\Ag.Cache\Ag.Cache.csproj" />
+    <ProjectReference Include="..\..\..\Shared\BuildingBlocks\Ag.Abstractions\Ag.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Generates the real AddMediator(...) + handler wiring code -->
+    <PackageReference Include="Mediator.SourceGenerator" Version="3.0.2" PrivateAssets="all" />
+    <PackageReference Include="Mediator.Abstractions" Version="3.0.2" />
+    <!-- Real idc_ety SQL Server, same as ag-kit itself uses -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />
+    <!-- GetValue<T>() extension used for the UseSandboxDb toggle -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

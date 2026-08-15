@@ -1,0 +1,17 @@
+<!-- PURPOSE: pure Domain layer - entity models + repository interfaces only.
+     References Ag.Abstractions for BaseEntity (the one cross-cutting type
+     shape - not a specific database technology). No EF Core/Redis/HTTP
+     package references here; those stay in Infrastructure. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Shared\BuildingBlocks\Ag.Abstractions\Ag.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,16 @@
+# .NET build output
+bin/
+obj/
+
+# Logs from local runs
+*.log
+
+# Stale local SQLite artifacts (project now uses real SQL Server / LocalDB)
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.vs/
+.vscode/
+*.user

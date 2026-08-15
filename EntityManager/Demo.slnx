@@ -1,0 +1,24 @@
+<Solution>
+  <Folder Name="/Host/">
+    <Project Path="Host/EntityManager.Api/EntityManager.Api.csproj" />
+  </Folder>
+  <Folder Name="/Modules/" />
+  <Folder Name="/Modules/EntityManager/">
+    <Project Path="Modules/EntityManager/EntityManager.Application/EntityManager.Application.csproj" />
+    <Project Path="Modules/EntityManager/EntityManager.Domain/EntityManager.Domain.csproj" />
+    <Project Path="Modules/EntityManager/EntityManager.Infrastructure/EntityManager.Infrastructure.csproj" />
+    <Project Path="Modules/EntityManager/EntityManager.Presentation/EntityManager.Presentation.csproj" />
+  </Folder>
+  <Folder Name="/Shared/" />
+  <Folder Name="/Shared/BuildingBlocks/">
+    <Project Path="Shared/BuildingBlocks/Ag.Abstractions/Ag.Abstractions.csproj" />
+    <Project Path="Shared/BuildingBlocks/Ag.Util/Ag.Util.csproj" />
+  </Folder>
+  <Folder Name="/Shared/Infrastructure/">
+    <Project Path="Shared/Infrastructure/Ag.Cache/Ag.Cache.csproj" />
+  </Folder>
+  <Folder Name="/Tools/">
+    <Project Path="Tools/SandboxSetup/SandboxSetup.csproj" />
+    <Project Path="Tools/SandboxWatcher/SandboxWatcher.csproj" />
+  </Folder>
+</Solution>

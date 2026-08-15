@@ -1,0 +1,17 @@
+<!-- PURPOSE: shared cross-cutting types copied from the real ag-kit repo
+     (Shared/BuildingBlocks/Ag.Abstractions) so the real Agent/Office/Company
+     entities and their EF configurations can compile unmodified against the
+     real idc_ety schema - BaseEntity, PagedResult, and the pagination helper. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>
