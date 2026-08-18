@@ -1,8 +1,9 @@
 // PURPOSE: watches the local idc_ety_sandbox LocalDB copy for real changes,
 // invalidates the matching Redis cache key, then immediately refills it via
 // /internal/cache/refresh so the very next reader gets a fresh HIT instead of
-// a MISS - the sandbox equivalent of cache-worker/src/watcher.js +
-// refreshWorker.js combined. Run this alongside the API (with
+// a MISS. This is a plain .NET console app - there is no Node.js anywhere in
+// this demo; this one process plays both the "watch for changes" and
+// "refill near-expiry keys" roles itself. Run this alongside the API (with
 // "UseSandboxDb": true in appsettings.json) to test a genuinely real write
 // triggering invalidation, instead of simulating it by deleting a Redis key
 // by hand.
@@ -17,10 +18,10 @@ const string SandboxConnectionString =
 const int PollIntervalMs = 3000;
 
 // Same stream CachingPipelineBehavior.cs pushes onto when a HIT is close to
-// expiring - in real production this is drained by cache-worker's
-// refreshWorker.js. Nothing plays that role in the sandbox, so near-expiry
-// entries just sit here unread and the key expires normally instead of being
-// proactively refreshed. ConsumeRefreshQueueLoopAsync below fills that gap.
+// expiring. Nothing else in this demo reads that stream, so without the loop
+// below near-expiry entries would just sit here unread and expire normally
+// instead of being proactively refreshed. ConsumeRefreshQueueLoopAsync below
+// fills that gap.
 const string RefreshQueueKey = "ety:refresh:queue";
 const string RefreshQueueCheckpointKey = "ety:sandbox:watcher:refreshqueue:checkpoint";
 
@@ -28,8 +29,8 @@ var redis = await ConnectionMultiplexer.ConnectAsync("127.0.0.1:6379");
 var db = redis.GetDatabase();
 
 // Used to immediately refill a key right after invalidating it, via the same
-// /internal/cache/refresh endpoint refreshWorker.js uses for near-expiry SWR
-// refreshes - see RefreshCacheAsync below for why this is best-effort.
+// /internal/cache/refresh endpoint the near-expiry SWR refresh loop below
+// also calls - see RefreshCacheAsync below for why this is best-effort.
 var httpClient = new HttpClient { BaseAddress = new Uri("http://localhost:5080") };
 
 // (Table, business-key column, entity name used in the cache key format)
@@ -162,9 +163,17 @@ async Task CheckTableAsync(string table, string businessKeyColumn, string entity
         {
             var cacheKey = CacheKeyBuilder.Build(row.ClientCode, entity, "get",
                 new Dictionary<string, string?> { [$"{entity}key"] = row.BusinessKey.ToString() });
-            await db.KeyDeleteAsync(cacheKey);
-            Console.WriteLine($"[sandbox-watcher] invalidated {cacheKey}");
-            await RefreshCacheAsync(cacheKey);
+
+            // Only refill if the key actually existed - otherwise this would
+            // manufacture a brand-new cache entry for a row nobody has ever
+            // queried, which isn't invalidation, it's cache warming for demand
+            // that doesn't exist.
+            var existed = await db.KeyDeleteAsync(cacheKey);
+            if (existed)
+            {
+                Console.WriteLine($"[sandbox-watcher] invalidated {cacheKey}");
+                await RefreshCacheAsync(cacheKey);
+            }
         }
 
         if (row.LastModified > maxSeen)

@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Ag.Cache Folder — Full Details</title>
+<style>
+  @page { margin: 24mm 18mm; }
+  body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; color: #1a1a1a; line-height: 1.55; font-size: 13px; }
+  h1 { font-size: 24px; border-bottom: 3px solid #2b6cb0; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 .sub { display:block; font-size: 13px; font-weight: normal; color: #555; margin-top: 4px; }
+  h2 { font-size: 17px; color: #2b6cb0; margin-top: 34px; border-bottom: 1px solid #ccc; padding-bottom: 4px; page-break-after: avoid; }
+  h3 { font-size: 14px; color: #1a1a1a; margin-top: 18px; page-break-after: avoid; }
+  .filebox { background: #1e1e1e; color: #d4d4d4; padding: 10px 12px; border-radius: 6px; font-family: 'Consolas', monospace; font-size: 11px; overflow-x: auto; margin: 10px 0; white-space: pre-wrap; word-break: break-word; }
+  .path { font-family: 'Consolas', monospace; background:#eef2f7; padding:2px 6px; border-radius:4px; font-size:12px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 12px; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #2b6cb0; color: white; }
+  tr:nth-child(even) { background: #f7f9fc; }
+  .callout { background: #fff7e6; border-left: 4px solid #dd8b00; padding: 10px 14px; margin: 14px 0; border-radius: 4px; }
+  .callout.good { background: #eafaf0; border-left-color: #23884a; }
+  .callout.bug { background: #fdeaea; border-left-color: #c0392b; }
+  .toc { background: #f7f9fc; border: 1px solid #ddd; border-radius: 6px; padding: 14px 20px; margin: 20px 0; }
+  .toc a { text-decoration: none; color: #2b6cb0; }
+  code { font-family: 'Consolas', monospace; background: #eef2f7; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  .flow { background: #f0f6ff; border: 1px solid #b7d4f0; border-radius: 6px; padding: 14px 18px; font-family: Consolas, monospace; font-size: 12px; white-space: pre; margin: 12px 0; }
+  ul, ol { margin: 6px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .footer-note { margin-top: 40px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 11px; color: #777; }
+</style>
+</head>
+<body>
+
+<h1>Ag.Cache — Full Folder Details
+<span class="sub">Shared/Infrastructure/Ag.Cache — the caching library used by EntityManager's demo</span>
+</h1>
+
+<div class="toc">
+<b>Contents</b>
+<ol>
+<li><a href="#overview">What this folder is and why it exists</a></li>
+<li><a href="#files">File-by-file breakdown</a></li>
+<li><a href="#flow">How the files work together — the request flow</a></li>
+<li><a href="#gotchas">Design decisions and bugs already caught</a></li>
+</ol>
+</div>
+
+<h2 id="overview">1. What this folder is, and why it lives here</h2>
+<p>
+<code>Ag.Cache</code> is a small, standalone class library — it is the <b>entire caching feature</b> for this demo.
+Nothing in <code>EntityManager.Domain</code>, <code>.Application</code>, or <code>.Infrastructure</code> needed to be rewritten
+to add caching; those layers were copied from real ag-kit essentially unchanged. Caching was added as a thin layer
+that plugs into the request pipeline from the outside.
+</p>
+<p>
+It lives under <code>Shared/Infrastructure</code> (not <code>Shared/BuildingBlocks</code>) because it has a hard
+dependency on a specific technology — Redis (via the <code>StackExchange.Redis</code> package) — which is exactly
+what the Infrastructure layer is for in Clean Architecture: concrete technology choices, not business rules.
+</p>
+<table>
+<tr><th>File</th><th>One-line role</th></tr>
+<tr><td><code>Ag.Cache.csproj</code></td><td>Project file — declares the package dependencies (Redis client, Mediator abstractions, DI/config plumbing)</td></tr>
+<tr><td><code>ICacheableQuery.cs</code></td><td>The opt-in interface — a query "raises its hand" to be cached by implementing this</td></tr>
+<tr><td><code>CacheKeyBuilder.cs</code></td><td>Builds the actual cache key string, two ways: manual dictionary, or automatic reflection</td></tr>
+<tr><td><code>CacheKeyIgnoreAttribute.cs</code></td><td>Opt-out marker — excludes a specific property from the automatic (reflection) key-building path</td></tr>
+<tr><td><code>CachingPipelineBehavior.cs</code></td><td>The actual caching logic — intercepts every Mediator request and does the Redis read/write</td></tr>
+<tr><td><code>AgCachingServiceExtensions.cs</code></td><td>One-time startup wiring — connects to Redis and registers it with dependency injection</td></tr>
+</table>
+
+<h2 id="files">2. File-by-file breakdown</h2>
+
+<h3>2.1 — <span class="path">Ag.Cache.csproj</span></h3>
+<p>Declares what this project depends on. Nothing in here is demo-specific — every package listed is something
+real ag-kit already uses elsewhere in the solution (confirmed: <code>Mediator.Abstractions 3.0.2</code> matches exactly).</p>
+<div class="filebox">&lt;PropertyGroup&gt;
+  &lt;TargetFramework&gt;net10.0&lt;/TargetFramework&gt;
+  &lt;ImplicitUsings&gt;enable&lt;/ImplicitUsings&gt;
+  &lt;Nullable&gt;enable&lt;/Nullable&gt;
+&lt;/PropertyGroup&gt;
+
+&lt;ItemGroup&gt;
+  &lt;PackageReference Include="StackExchange.Redis" Version="2.8.24" /&gt;
+  &lt;PackageReference Include="Mediator.Abstractions" Version="3.0.2" /&gt;
+  &lt;PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" /&gt;
+  &lt;PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" /&gt;
+  &lt;PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" /&gt;
+&lt;/ItemGroup&gt;</div>
+<table>
+<tr><th>Package</th><th>Why it's needed</th></tr>
+<tr><td><code>StackExchange.Redis</code></td><td>The actual Redis client — talks to the Redis server (GET/SET/STREAM commands)</td></tr>
+<tr><td><code>Mediator.Abstractions</code></td><td>Gives access to <code>IPipelineBehavior&lt;,&gt;</code> and <code>IRequest&lt;&gt;</code>, so this project can plug into Mediator's pipeline without depending on the whole Mediator source generator</td></tr>
+<tr><td><code>Microsoft.Extensions.Configuration.*</code></td><td>Lets <code>AgCachingServiceExtensions.cs</code> read the <code>"Redis"</code> section out of <code>appsettings.json</code></td></tr>
+<tr><td><code>Microsoft.Extensions.DependencyInjection.Abstractions</code></td><td>Lets <code>AgCachingServiceExtensions.cs</code> register the Redis connection into the DI container</td></tr>
+</table>
+
+<h3>2.2 — <span class="path">ICacheableQuery.cs</span></h3>
+<p>This is the <b>opt-in switch</b>. A Mediator query that wants caching implements this interface on its record.
+A query that doesn't implement it is completely invisible to the caching system — nothing about it changes, no
+performance cost beyond a single type check.</p>
+<div class="filebox">public interface ICacheableQuery
+{
+    string? BuildCacheKey();
+    TimeSpan Ttl { get; }
+    TimeSpan RefreshWindow { get; }
+}</div>
+<table>
+<tr><th>Member</th><th>Meaning</th></tr>
+<tr><td><code>BuildCacheKey()</code></td><td>Returns the exact Redis key string for this specific call's parameters. Returning <code>null</code> means "don't cache this particular call at all" (see the callout below — this is a deliberate safety feature, not a shortcut).</td></tr>
+<tr><td><code>Ttl</code></td><td>How long a freshly-stored cache entry should live before it expires on its own.</td></tr>
+<tr><td><code>RefreshWindow</code></td><td>How much time-left-on-the-clock triggers a proactive background refresh instead of just serving the (still valid) cached value as-is.</td></tr>
+</table>
+<div class="callout good">
+<b>Why <code>BuildCacheKey()</code> can return null</b> — An earlier version of this demo fell back to a placeholder
+scope (<code>ety:default:...</code>) whenever a required value like <code>ClientCode</code> was missing from the request.
+That was a real bug: nothing watching the database for changes could ever reconstruct that same fake key to invalidate
+it, so the entry would sit there stale until its TTL happened to expire. Returning <code>null</code> instead makes that
+failure mode structurally impossible — <code>CachingPipelineBehavior</code> treats a null key exactly like "this query
+doesn't implement <code>ICacheableQuery</code> at all" and skips Redis completely for that one call.
+</div>
+
+<h3>2.3 — <span class="path">CacheKeyBuilder.cs</span></h3>
+<p>The single place that decides what a cache key string looks like: <code>ety:{CLIENTCODE}:{entity}:{operation}:{sorted params}</code>.
+Every cacheable query calls into here instead of building its own string by hand, so the format can never drift
+between query types. It currently offers <b>two</b> ways to build the parameter portion of the key:</p>
+
+<h3 style="margin-top:8px;">Build() — the manual, hand-built-dictionary approach</h3>
+<div class="filebox">public static string Build(
+    string clientCode, string entity, string operation,
+    IDictionary&lt;string, string?&gt; parameters)
+{
+    var normalized = parameters
+        .Where(p =&gt; !string.IsNullOrEmpty(p.Value))
+        .OrderBy(p =&gt; p.Key, StringComparer.OrdinalIgnoreCase)
+        .Select(p =&gt; $"{p.Key.ToLowerInvariant()}={p.Value}");
+
+    var paramPart = string.Join("&amp;", normalized);
+    return $"ety:{clientCode.ToUpperInvariant()}:{entity}:{operation}:{paramPart}";
+}</div>
+<p>Each caller passes an explicit <code>Dictionary&lt;string,string?&gt;</code> naming exactly which of its own
+properties should scope the cache — this is what most of the 9 cacheable queries in this demo still use today.</p>
+<ul>
+<li><b>Null/empty values are dropped</b> — a request with only <code>agentKey</code> set produces a shorter key
+than one that also has <code>seoName</code> set, so two logically different requests never collide.</li>
+<li><b>Parameters are sorted by name</b> — the same logical request always produces the same key, no matter what
+order its parameters happened to arrive in on the URL.</li>
+<li><b><code>clientCode</code> is uppercased</b> — SQL Server compares it case-insensitively (<code>'VLA' = 'vla'</code>),
+but a Redis key is just a string with no such rule. Without this, a caller who types <code>"vla"</code> and one who
+types <code>"VLA"</code> would get two totally separate, unrelated cache entries for the same real tenant — and
+whichever casing the database happens to store is the only one the watcher could ever reconstruct to invalidate.
+Uppercasing here guarantees every caller (and the watcher) always land on the exact same key.</li>
+</ul>
+
+<h3 style="margin-top:8px;">BuildFromObject() — the automatic, reflection-based approach</h3>
+<div class="filebox">public static string? BuildFromObject(
+    string? clientCode, string entity, string operation,
+    object query, params string[] excludeProperties)
+{
+    if (string.IsNullOrWhiteSpace(clientCode))
+        return null;
+
+    var exclude = new HashSet&lt;string&gt;(excludeProperties, StringComparer.OrdinalIgnoreCase);
+
+    var parameters = query.GetType()
+        .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+        .Where(p =&gt; !exclude.Contains(p.Name))
+        .Where(p =&gt; !InterfaceOwnedProperties.Contains(p.Name))
+        .Where(p =&gt; p.GetCustomAttribute&lt;CacheKeyIgnoreAttribute&gt;() is null)
+        .ToDictionary(p =&gt; p.Name, p =&gt; p.GetValue(query)?.ToString());
+
+    return Build(clientCode, entity, operation, parameters);
+}</div>
+<p>This was added to answer a specific question: <i>"if a new API parameter gets added later, does the cache key
+pick it up automatically, or does someone have to remember to add it by hand?"</i> With <code>Build()</code>, the
+answer is "someone has to remember" — miss that step and two requests that differ only in the new parameter would
+silently collide onto the same cache key, one of them serving the other's wrong cached result. <code>BuildFromObject()</code>
+reflects over the query record's own public properties instead, so any new property is automatically part of the
+key with zero changes to that query's <code>BuildCacheKey()</code> method.</p>
+<p>Because a record's property names get lowercased the same way a hand-written dictionary key would (<code>AgentKey</code>
+→ <code>agentkey</code>), the two approaches produce <b>byte-identical keys</b> for the same query today — this was
+verified when <code>GetAgentQuery</code> was converted, and no Redis flush or watcher change was needed.</p>
+
+<div class="callout">
+<b><code>InterfaceOwnedProperties</code></b> — <code>ICacheableQuery</code> itself declares two public properties,
+<code>Ttl</code> and <code>RefreshWindow</code>, which every cacheable query implements. Reflection has no way to
+tell those apart from a real filter property like <code>AgentKey</code> unless told explicitly — so
+<code>CacheKeyBuilder</code> pre-computes the interface's own property names once (via reflection over
+<code>typeof(ICacheableQuery)</code> itself) and always excludes them, automatically, for every query that adopts
+<code>BuildFromObject()</code>. See the bug story in section 4 below — this exclusion was added <i>after</i> it was
+caught missing in production testing, not before.
+</div>
+
+<h3>2.4 — <span class="path">CacheKeyIgnoreAttribute.cs</span></h3>
+<div class="filebox">[AttributeUsage(AttributeTargets.Property)]
+public sealed class CacheKeyIgnoreAttribute : Attribute
+{
+}</div>
+<p>The general-purpose opt-out valve for the reflection approach. <code>InterfaceOwnedProperties</code> handles the
+one specific, always-true case (every query has <code>Ttl</code>/<code>RefreshWindow</code>). This attribute handles
+everything else: if a query record ever grows a property later that isn't meant to scope the cache — e.g. a computed
+convenience property, an internal correlation ID, anything that isn't really "part of the request's identity" —
+tagging it <code>[CacheKeyIgnore]</code> keeps it out of the key instead of silently fragmenting the cache into more
+entries than necessary.</p>
+
+<h3>2.5 — <span class="path">CachingPipelineBehavior.cs</span></h3>
+<p>This is where the actual caching decisions happen — a Mediator <code>IPipelineBehavior&lt;TRequest,TResponse&gt;</code>
+that Mediator runs automatically, in front of every request's real handler, no matter which query or command it is.</p>
+<div class="filebox">public async ValueTask&lt;TResponse&gt; Handle(
+    TRequest request,
+    MessageHandlerDelegate&lt;TRequest, TResponse&gt; next,
+    CancellationToken cancellationToken)
+{
+    if (request is not ICacheableQuery cacheable)
+        return await next(request, cancellationToken);          // not opted in -&gt; pass straight through
+
+    IDatabase db;
+    try { db = _redis.GetDatabase(); }
+    catch { return await next(request, cancellationToken); }    // Redis down -&gt; fail open, don't crash the API
+
+    var key = cacheable.BuildCacheKey();
+    if (key is null)
+        return await next(request, cancellationToken);          // missing scoping value -&gt; skip caching entirely
+
+    var cached = await db.StringGetWithExpiryAsync(key);
+
+    if (cached.Value.HasValue)                                   // CACHE HIT
+    {
+        if (cached.Expiry &lt; cacheable.RefreshWindow)
+            _ = db.StreamAddAsync("ety:refresh:queue", new[] { new NameValueEntry("key", key) });
+
+        return JsonSerializer.Deserialize&lt;TResponse&gt;(cached.Value!, ...)!;
+    }
+
+    var result = await next(request, cancellationToken);         // CACHE MISS -&gt; run the real handler
+    await db.StringSetAsync(key, JsonSerializer.Serialize(result, ...), cacheable.Ttl);
+    return result;
+}</div>
+<p>Step by step, every single request that flows through Mediator hits this logic:</p>
+<ol>
+<li><b>Not an <code>ICacheableQuery</code>?</b> Pass through untouched — this is how every write/command in the
+system stays completely unaffected by caching, with negligible cost (one <code>is</code> type check).</li>
+<li><b>Redis unreachable?</b> "Fail open" — log it and run the real handler as if caching didn't exist, rather than
+letting a Redis outage take down the whole API.</li>
+<li><b><code>BuildCacheKey()</code> returned null?</b> Same as step 1 — skip Redis, run the real handler.</li>
+<li><b>Cache HIT?</b> Deserialize the stored JSON and return immediately — the real handler, repository, and
+database are never touched for this request.</li>
+<li><b>HIT but close to expiring?</b> ("close" = less time left than <code>RefreshWindow</code>) Still return the
+still-valid cached value immediately, but also fire-and-forget push the key onto a Redis Stream
+(<code>ety:refresh:queue</code>) so <i>something else</i> (a background worker) can refresh it proactively. This is
+the Stale-While-Revalidate half of the pattern — the current caller never waits on a slow refresh.</li>
+<li><b>Cache MISS?</b> This is the original, completely unmodified code path — run the real handler exactly as if
+caching didn't exist, then store its result under the key with the query's own <code>Ttl</code> before returning it.</li>
+</ol>
+<div class="callout">
+<b>Note about the Mediator pipeline signature</b> — the real <code>Mediator.Abstractions</code> library's
+<code>IPipelineBehavior&lt;,&gt;.Handle(...)</code> takes <code>next</code> <i>before</i> <code>cancellationToken</code>.
+This was confirmed the hard way, by an actual compiler error while building this demo — worth double-checking
+against whatever Mediator design documentation you're following, since it shows the opposite order.
+</div>
+
+<h3>2.6 — <span class="path">AgCachingServiceExtensions.cs</span></h3>
+<p>One-time startup wiring, called exactly once from <code>Program.cs</code> when the app boots — never during a
+request.</p>
+<div class="filebox">public static IServiceCollection AddAgCaching(this IServiceCollection services, IConfiguration configuration)
+{
+    var redisSection = configuration.GetSection("Redis");
+
+    var options = new ConfigurationOptions
+    {
+        EndPoints = { $"{redisSection["Host"]}:{redisSection["Port"]}" },
+        Password = redisSection["Password"],
+        Ssl = redisSection.GetValue&lt;bool&gt;("Ssl"),
+        AbortOnConnectFail = false
+    };
+
+    services.AddSingleton&lt;IConnectionMultiplexer&gt;(ConnectionMultiplexer.Connect(options));
+    return services;
+}</div>
+<p>Reads a <code>"Redis"</code> section from <code>appsettings.json</code> (<code>Host</code>, <code>Port</code>,
+<code>Password</code>, <code>Ssl</code>), connects once, and registers that single shared connection as a singleton
+in DI — <code>CachingPipelineBehavior</code> then receives it via constructor injection on every request without
+reconnecting. <code>AbortOnConnectFail = false</code> is deliberate: if Redis happens to be down at the exact moment
+the API starts up, the API should still start (and simply run uncached / fail-open per request, as described above)
+rather than crash on boot.</p>
+
+<h2 id="flow">3. How the files work together — the request flow</h2>
+<div class="flow">HTTP request
+   │
+   ▼
+Presentation endpoint (e.g. GET /Agent/get)
+   │  sender.Send(new GetAgentQuery(agentKey, seoName, clientCode))
+   ▼
+Mediator dispatch
+   │  runs every registered IPipelineBehavior&lt;,&gt; BEFORE the real handler
+   ▼
+CachingPipelineBehavior&lt;GetAgentQuery, JsonElement?&gt;.Handle(...)
+   │
+   ├─ not ICacheableQuery?          ──────────────▶ skip straight to real handler
+   ├─ BuildCacheKey() returns null? ──────────────▶ skip straight to real handler
+   ├─ Redis HIT, plenty of time left? ─────────────▶ return cached JSON, DONE (no DB hit)
+   ├─ Redis HIT, near expiry?         ─────────────▶ return cached JSON, DONE
+   │                                    + push key onto ety:refresh:queue (background)
+   └─ Redis MISS ──▶ next(request) ──▶ real GetAgentQueryHandler.Handle(...)
+                                          │
+                                          ▼
+                                    IAgentRepository (EF Core / SQL Server)
+                                          │
+                                          ▼
+                                    JSON result bubbles back up
+                                          │
+                                          ▼
+                              STORE into Redis under the key, with Ttl
+                                          │
+                                          ▼
+                                    return result to caller
+</div>
+<p>Two independent processes/services outside the request path also interact with Ag.Cache's keys and streams:</p>
+<ul>
+<li>A <b>watcher</b> (in this demo, <code>Tools/SandboxWatcher</code>) polls the database directly for changed
+rows and deletes (invalidates) the matching key using the exact same <code>CacheKeyBuilder.Build()</code> logic —
+it reconstructs the key from the row's own real, canonical <code>ClientCode</code>/business key, which only works
+because <code>Ag.Cache</code> never allows a key to be built from anything the watcher couldn't also independently
+derive from the database row itself.</li>
+<li>A <b>refresh-queue consumer</b> drains <code>ety:refresh:queue</code> (the stream <code>CachingPipelineBehavior</code>
+pushes onto near expiry) and proactively re-runs the query so the next real caller gets a fast HIT instead of paying
+for the MISS themselves.</li>
+</ul>
+
+<h2 id="gotchas">4. Design decisions and a bug already caught here</h2>
+<div class="callout bug">
+<b>Real bug caught during testing:</b> when <code>GetAgentQuery</code> was first converted to
+<code>BuildFromObject()</code>, <code>Ttl</code> and <code>RefreshWindow</code> were <i>not yet</i> excluded.
+Because they're public properties on the record (required by <code>ICacheableQuery</code>), reflection picked
+them up exactly like <code>AgentKey</code>/<code>SeoName</code>, producing keys like:<br>
+<code>ety:VLA:agent:get:agentkey=1792&amp;refreshwindow=00:02:00&amp;seoname=susan-harris&amp;ttl=00:10:00</code><br>
+This was caught by inspecting the actual key in RedisInsight, not by any automated test. The fix —
+<code>InterfaceOwnedProperties</code> in <code>CacheKeyBuilder.cs</code> — excludes anything declared directly on
+<code>ICacheableQuery</code> automatically, for every current and future query that adopts
+<code>BuildFromObject()</code>, so this class of mistake can't recur per-query.
+</div>
+<div class="callout good">
+<b>Trade-off to keep in mind if converting more queries to <code>BuildFromObject()</code>:</b> the manual
+<code>Build()</code> approach's risk is <i>under-inclusion</i> (forgetting to add a new param — silent stale/wrong
+cache hits). The reflection approach's risk is the opposite, <i>over-inclusion</i> (a future property accidentally
+becoming part of the key when it shouldn't be — silent cache fragmentation instead of a wrong hit). Neither is
+strictly safer; <code>[CacheKeyIgnore]</code> exists specifically to manage the second risk when it comes up.
+</div>
+
+<div class="footer-note">
+Generated for the ag-kit EntityManager Redis caching demo — reflects the code in
+<span class="path">EntityManager/Shared/Infrastructure/Ag.Cache/</span> as of this writing.
+</div>
+
+</body>
+</html>

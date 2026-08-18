@@ -9,7 +9,6 @@
 using Ag.Cache;
 using EntityManager.Infrastructure.DependencyInjection;
 using EntityManager.Presentation;
-using EntityManager.Presentation.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://localhost:5080");
@@ -24,13 +23,10 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.MapEntityManagerEndpoints(); // registers all GET-only Agent/Office/Company routes
-
-// Sandbox-only write endpoint for testing (see SandboxTestEndpoints.cs) -
-// never mapped at all unless UseSandboxDb is true, so it's structurally
-// impossible to reach this against real production.
-if (builder.Configuration.GetValue<bool>("UseSandboxDb"))
-    app.MapSandboxTestEndpoints();
+// Registers all Agent/Office/Company routes. Update endpoints (see
+// AgentUpdateEndpoint.cs etc.) are only mapped at all when UseSandboxDb is
+// true - structurally impossible to reach against real production.
+app.MapEntityManagerEndpoints(builder.Configuration.GetValue<bool>("UseSandboxDb"));
 
 app.MapGet("/", () => Results.Redirect("/swagger"));
 

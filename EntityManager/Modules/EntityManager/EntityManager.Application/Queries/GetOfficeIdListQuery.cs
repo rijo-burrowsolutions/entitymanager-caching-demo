@@ -17,16 +17,9 @@ public record GetOfficeIdListQuery(
     int? PageSize)
     : IRequest<PagedResult<int>>, ICacheableQuery
 {
-    // See GetAgentQuery.cs - no ClientID means not cacheable for this call.
-    public string? BuildCacheKey() => string.IsNullOrWhiteSpace(ClientID) ? null : CacheKeyBuilder.Build(
-        ClientID, "office", "idlist",
-        new Dictionary<string, string?>
-        {
-            ["officeName"] = OfficeName,
-            ["parentCompany"] = ParentCompany?.ToString(),
-            ["pageNumber"] = PageNumber?.ToString(),
-            ["pageSize"] = PageSize?.ToString()
-        });
+    // Reflection-based - see GetAgentQuery.cs for the full reasoning.
+    public string? BuildCacheKey() => CacheKeyBuilder.BuildFromObject(
+        ClientID, "office", "idlist", this, nameof(ClientID));
 
     // Flat 10 min locally for every cacheable query - see GetAgentQuery.cs.
     public TimeSpan Ttl => TimeSpan.FromMinutes(10);

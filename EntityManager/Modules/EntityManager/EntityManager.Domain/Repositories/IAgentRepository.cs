@@ -9,11 +9,25 @@ namespace EntityManager.Domain.Repositories;
 public interface IAgentRepository
 {
     Task<Agent> GetAgent(int? agentKey, string? seoName, string? clientCode, CancellationToken cancellationToken);
-    Task<AgentDetail> GetAgentDetail(int? agentKey, string? seoName, string? clientCode, CancellationToken cancellationToken);
+    Task<AgentDetail> GetAgentDetail(
+        int? agentKey, string? seoName, string? clientCode,
+        string? firstName, string? lastName, string? fullName, string? email,
+        CancellationToken cancellationToken);
+    Task<Agent?> UpdateAgent(
+        int agentKey, string clientCode,
+        string? firstName, string? lastName, string? fullName, string? emailAddress,
+        CancellationToken cancellationToken);
     IQueryable<Agent> GetAgentList(
         int? agentKey,
         string? clientCode,
         string? fullName,
         string? seoName,
+        CancellationToken cancellationToken);
+    Task<List<Agent>> SuggestAgents(
+        string name,
+        string clientCode,
+        bool? isTeam,
+        IReadOnlyCollection<int> excludeKeys,
+        int take,
         CancellationToken cancellationToken);
 }

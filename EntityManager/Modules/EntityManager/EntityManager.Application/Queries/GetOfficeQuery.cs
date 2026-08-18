@@ -10,17 +10,14 @@ using Ag.Cache;
 namespace EntityManager.Application.Queries;
 
 public record GetOfficeQuery(
-    int OfficeKey,
-    string? ClientCode)
+    int? OfficeKey,
+    string? ClientCode,
+    string? OfficeName = null, string? City = null, string? Email = null)
     : IRequest<JsonElement?>, ICacheableQuery
 {
-    // See GetAgentQuery.cs - no ClientCode means not cacheable for this call.
-    public string? BuildCacheKey() => string.IsNullOrWhiteSpace(ClientCode) ? null : CacheKeyBuilder.Build(
-        ClientCode, "office", "get",
-        new Dictionary<string, string?>
-        {
-            ["officeKey"] = OfficeKey.ToString()
-        });
+    // Reflection-based - see GetAgentQuery.cs for the full reasoning.
+    public string? BuildCacheKey() => CacheKeyBuilder.BuildFromObject(
+        ClientCode, "office", "get", this, nameof(ClientCode));
 
     // Flat 10 min locally for every cacheable query - see GetAgentQuery.cs.
     public TimeSpan Ttl => TimeSpan.FromMinutes(10);
@@ -44,12 +41,19 @@ public class GetOfficeQueryHandler
         GetOfficeQuery request,
         CancellationToken cancellationToken)
     {
-        if (request.OfficeKey <= 0)
-            throw new ArgumentException("OfficeKey is required");
+        if (!request.OfficeKey.HasValue && string.IsNullOrWhiteSpace(request.OfficeName)
+            && string.IsNullOrWhiteSpace(request.City) && string.IsNullOrWhiteSpace(request.Email))
+            throw new ArgumentException("At least one of OfficeKey, OfficeName, City or Email is required");
+
+        if (request.OfficeKey is <= 0)
+            throw new ArgumentException("OfficeKey must be a positive number");
 
         var office = await officeRepository.GetOffice(
             request.OfficeKey,
             request.ClientCode,
+            request.OfficeName,
+            request.City,
+            request.Email,
             cancellationToken);
 
         if (office == null || string.IsNullOrWhiteSpace(office.RawJson))

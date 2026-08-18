@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Implementing Redis Caching in Real ag-kit EntityManager</title>
+<style>
+  @page { margin: 24mm 18mm; }
+  body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; color: #1a1a1a; line-height: 1.55; font-size: 13px; }
+  h1 { font-size: 24px; border-bottom: 3px solid #7c3aed; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 .sub { display:block; font-size: 13px; font-weight: normal; color: #555; margin-top: 4px; }
+  h2 { font-size: 17px; color: #7c3aed; margin-top: 34px; border-bottom: 1px solid #ccc; padding-bottom: 4px; page-break-after: avoid; }
+  h3 { font-size: 14px; color: #1a1a1a; margin-top: 18px; page-break-after: avoid; }
+  .filebox { background: #1e1e1e; color: #d4d4d4; padding: 10px 12px; border-radius: 6px; font-family: 'Consolas', monospace; font-size: 11px; overflow-x: auto; margin: 10px 0; white-space: pre-wrap; word-break: break-word; }
+  .path { font-family: 'Consolas', monospace; background:#eef2f7; padding:2px 6px; border-radius:4px; font-size:12px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 12px; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #7c3aed; color: white; }
+  tr:nth-child(even) { background: #f8f6fc; }
+  .callout { background: #fff7e6; border-left: 4px solid #dd8b00; padding: 10px 14px; margin: 14px 0; border-radius: 4px; }
+  .callout.good { background: #eafaf0; border-left-color: #23884a; }
+  .callout.warn { background: #fdeaea; border-left-color: #c0392b; }
+  .toc { background: #f8f6fc; border: 1px solid #ddd; border-radius: 6px; padding: 14px 20px; margin: 20px 0; }
+  .toc a { text-decoration: none; color: #7c3aed; }
+  code { font-family: 'Consolas', monospace; background: #eef2f7; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  .flow { background: #f5f0fd; border: 1px solid #d3c1f5; border-radius: 6px; padding: 14px 18px; font-family: Consolas, monospace; font-size: 12px; white-space: pre; margin: 12px 0; }
+  ul, ol { margin: 6px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .step-badge { display:inline-block; background:#7c3aed; color:white; border-radius: 50%; width: 22px; height: 22px; text-align:center; line-height:22px; font-size:12px; margin-right:8px; }
+  .footer-note { margin-top: 40px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 11px; color: #777; }
+  .diff-add { color: #23884a; }
+  .diff-existing { color: #999; }
+</style>
+</head>
+<body>
+
+<h1>Implementing Redis Caching in Real ag-kit EntityManager
+<span class="sub">A concrete, file-by-file guide — based on the working demo at entitymanager-caching-demo, checked against real ag-kit source</span>
+</h1>
+
+<div class="toc">
+<b>Contents</b>
+<ol>
+<li><a href="#state">Current state of real ag-kit (confirmed by reading the source)</a></li>
+<li><a href="#flow">The request flow — exactly where caching plugs in</a></li>
+<li><a href="#steps">Step-by-step implementation</a></li>
+<li><a href="#watcher">The missing piece: invalidation needs a watcher</a></li>
+<li><a href="#risks">Known risks and pre-existing issues to fix alongside this</a></li>
+</ol>
+</div>
+
+<h2 id="state">1. Current state of real ag-kit (confirmed by reading the source)</h2>
+<p>Before writing a single line, here's exactly what exists today in <code>ag-kit</code> — verified by reading the
+actual files, not assumed:</p>
+<table>
+<tr><th>Area</th><th>Current state</th></tr>
+<tr><td><code>Shared/Infrastructure/Ag.Cache/</code></td><td>Exists, but is an <b>empty scaffold</b> — just the SDK-template <code>Class1.cs</code> and a <code>.csproj</code> with zero package references. None of the real caching code exists here yet.</td></tr>
+<tr><td>Redis anywhere in the solution</td><td><b>Not present at all.</b> No <code>StackExchange.Redis</code> package reference anywhere, no <code>"Redis"</code> section in any <code>appsettings.json</code>, no Redis connection string.</td></tr>
+<tr><td><code>Host/EntityManager.Api/Program.cs</code></td><td>Thin: <code>AddAgConfigure</code> → <code>AddSwaggerGen</code> → <code>AddEntityManagerModule</code> → build → <code>UseAg</code>/<code>UseSwagger</code>/<code>UseSwaggerUI</code> → <code>MapEntityManagerEndpoints</code>. No cache-related call anywhere.</td></tr>
+<tr><td><code>EntityManagerModuleServiceExtensions.cs</code></td><td><code>AddMediator</code> is called with <code>ServiceLifetime.Scoped</code> and one marker assembly (<code>EntityManager.Application.Commands.Agent.GetAgentCommand</code>). <b>Zero <code>IPipelineBehavior&lt;,&gt;</code> registrations exist today</b> — this is a clean, empty insertion point.</td></tr>
+<tr><td>Mediator package version</td><td><code>Mediator.Abstractions</code> / <code>Mediator.SourceGenerator</code> <b>3.0.2</b> — matches the demo exactly. No version-compatibility work needed.</td></tr>
+<tr><td><code>GetAgentQuery.cs</code> (real)</td><td><code>public record GetAgentQuery(int? AgentKey, string? SeoName, string? ClientCode) : IRequest&lt;JsonElement?&gt;;</code> — does <b>not</b> implement <code>ICacheableQuery</code> (that interface doesn't exist in real ag-kit yet). Handler logic is otherwise identical to the demo's copy.</td></tr>
+<tr><td><code>AgentRepository.GetAgentList</code> vs <code>GetAgentDetail</code></td><td><b>Confirmed real, pre-existing inconsistency</b> (see section 5) — <code>GetAgentDetail</code> filters <code>IsDisplayedOnWebsite</code> + inner-joins Office/Company; <code>GetAgentList</code> filters neither.</td></tr>
+</table>
+
+<h2 id="flow">2. The request flow — exactly where caching plugs in</h2>
+<p>This answers "from which section does it hit the cache pipeline" directly: caching is <b>not</b> tied to any
+specific layer's file — it's a Mediator pipeline behavior, registered once in DI as an <b>open generic</b>
+(<code>IPipelineBehavior&lt;,&gt;</code>). Mediator automatically runs it in front of the real handler for
+<i>every single request</i> sent through <code>sender.Send(...)</code>, regardless of which module or which
+Presentation endpoint triggered it.</p>
+<div class="flow">HTTP GET /Agent/get?agentKey=131&amp;clientCode=WRE
+   │
+   ▼  [Presentation layer]  EntityManager.Presentation/Endpoints/AgentEndpoints.cs
+   │     app.MapGet("/Agent/get", async (ISender sender, int? agentKey, ...) =&gt; {
+   │         var result = await sender.Send(new GetAgentQuery(agentKey, seoName, clientCode));
+   │     });
+   ▼
+   [Mediator's internal dispatch — generated code, not hand-written]
+   │     runs every IPipelineBehavior&lt;GetAgentQuery, JsonElement?&gt; registered in DI, in order,
+   │     wrapping the real handler like a set of middleware
+   ▼
+   [Infrastructure layer, but NOT tied to EntityManager specifically]
+   │     Ag.Cache/CachingPipelineBehavior&lt;TRequest,TResponse&gt;.Handle(request, next, ct)
+   │        - is request an ICacheableQuery?  (GetAgentQuery now says yes)
+   │        - BuildCacheKey() -&gt; "ety:WRE:agent:get:agentkey=131"
+   │        - Redis GET that key
+   │        - HIT  -&gt; return immediately, done (no DB call at all)
+   │        - MISS -&gt; call next(request, ct)  ───────────────┐
+   ▼                                                          │
+   [Application layer]  EntityManager.Application/Queries/    │
+      GetAgentQueryHandler.Handle(request, ct)  ◀─────────────┘
+         - calls agentRepository.GetAgentDetail(...)
+   ▼
+   [Infrastructure layer]  EntityManager.Infrastructure/Persistance/Repositories/AgentRepository.cs
+      -&gt; EF Core -&gt; real idc_ety SQL Server
+   ▼
+   result bubbles back up through CachingPipelineBehavior, which STOREs it in Redis with the query's Ttl,
+   then returns it to the Presentation endpoint -&gt; HTTP response
+</div>
+<div class="callout">
+<b>Important scope note:</b> because the pipeline behavior is registered as an <b>open generic singleton</b>
+(<code>services.AddSingleton(typeof(IPipelineBehavior&lt;,&gt;), typeof(CachingPipelineBehavior&lt;,&gt;))</code>), it
+applies to <i>every</i> Mediator request resolved from that same service collection — not just Agent/Office/Company
+queries. This is safe by construction: the very first line of <code>Handle()</code> is
+<code>if (request is not ICacheableQuery cacheable) return await next(...)</code>, so every write <code>Command</code>
+in EntityManager (and, if this same registration pattern is reused in another module's host later, every request
+there too) passes straight through untouched, at the cost of one cheap type check. Nothing needs caching opted out —
+only queries that explicitly implement <code>ICacheableQuery</code> are ever touched.
+</div>
+
+<h2 id="steps">3. Step-by-step implementation</h2>
+
+<h3><span class="step-badge">1</span>Build out the real Ag.Cache project</h3>
+<p><code>Shared/Infrastructure/Ag.Cache/Ag.Cache.csproj</code> today has no package references. Add the same five
+this demo uses (all already used elsewhere in the ag-kit solution, so no new approvals needed for the Mediator one):</p>
+<div class="filebox">&lt;ItemGroup&gt;
+  &lt;PackageReference Include="StackExchange.Redis" Version="2.8.24" /&gt;
+  &lt;PackageReference Include="Mediator.Abstractions" Version="3.0.2" /&gt;
+  &lt;PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" /&gt;
+  &lt;PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" /&gt;
+  &lt;PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" /&gt;
+&lt;/ItemGroup&gt;</div>
+<p>Delete the placeholder <code>Class1.cs</code>, and add these six files — copied essentially unchanged from
+<code>entitymanager-caching-demo/EntityManager/Shared/Infrastructure/Ag.Cache/</code> (see the companion PDF,
+"Ag.Cache — Full Folder Details", for the complete content and reasoning behind each):</p>
+<ul>
+<li><code>ICacheableQuery.cs</code> — the opt-in interface</li>
+<li><code>CacheKeyBuilder.cs</code> — <code>Build()</code> and <code>BuildFromObject()</code></li>
+<li><code>CacheKeyIgnoreAttribute.cs</code> — reflection opt-out marker</li>
+<li><code>CachingPipelineBehavior.cs</code> — the actual caching logic</li>
+<li><code>AgCachingServiceExtensions.cs</code> — startup wiring</li>
+</ul>
+<p>None of these five files reference anything EntityManager-specific — this project has zero knowledge of Agent/
+Office/Company. It can be dropped into <code>Shared/Infrastructure</code> and reused by any other module later
+without modification.</p>
+
+<h3><span class="step-badge">2</span>Add Redis config to appsettings.json</h3>
+<p>Real ag-kit's <code>Host/EntityManager.Api/appsettings.json</code> has no <code>"Redis"</code> section today —
+add one alongside the existing <code>ConnectionStrings</code>/<code>Jwt</code>/<code>CDN</code> sections:</p>
+<div class="filebox">"Redis": {
+  "Host": "&lt;your Redis host&gt;",
+  "Port": "6379",
+  "Password": "&lt;set via environment/secret, never checked in&gt;",
+  "Ssl": false
+}</div>
+<div class="callout warn">
+Whatever real Redis instance backs this in production/staging, treat its password exactly like the database
+credentials — environment variable or secret store, never committed to <code>appsettings.json</code> directly, for
+the same reasons already applied to <code>IDC_ETY</code>'s connection string in the demo.
+</div>
+
+<h3><span class="step-badge">3</span>Wire <code>AddAgCaching</code> into Program.cs</h3>
+<p>One line added to the real <code>Host/EntityManager.Api/Program.cs</code>:</p>
+<div class="filebox">using Ag.Cache;                                                          <span class="diff-add">// add</span>
+using EntityManager.Infrastructure.DependencyInjection;
+using EntityManager.Presentation;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAgConfigure(builder.Configuration);
+<span class="diff-add">builder.Services.AddAgCaching(builder.Configuration);                    // add - connects to Redis</span>
+builder.Services.AddSwaggerGen();
+builder.Services.AddEntityManagerModule(builder.Configuration);
+
+var app = builder.Build();
+
+app.UseAg();
+app.UseSwagger();
+app.UseSwaggerUI();
+app.MapEntityManagerEndpoints();
+
+app.Run();</div>
+
+<h3><span class="step-badge">4</span>Register the pipeline behavior</h3>
+<p>Inside <code>EntityManagerModuleServiceExtensions.cs</code>, right after the existing <code>AddMediator(...)</code>
+call, add the same registration the demo uses and has verified working end-to-end:</p>
+<div class="filebox">services.AddMediator(config =&gt;
+{
+    config.ServiceLifetime = ServiceLifetime.Scoped;
+    config.Assemblies = [typeof(EntityManager.Application.Commands.Agent.GetAgentCommand)];
+});
+
+<span class="diff-add">// add - Mediator will now run CachingPipelineBehavior before every query's real handler
+services.AddSingleton(typeof(IPipelineBehavior&lt;,&gt;), typeof(CachingPipelineBehavior&lt;,&gt;));</span>
+
+services.AddScoped&lt;IAgentRepository,AgentRepository&gt;();
+services.AddScoped&lt;IOfficeRepository,OfficeRepository&gt;();
+services.AddScoped&lt;ICompanyRepository,CompanyRepository&gt;();</div>
+<div class="callout">
+This exact registration line (<code>services.AddSingleton(typeof(IPipelineBehavior&lt;,&gt;), typeof(CachingPipelineBehavior&lt;,&gt;))</code>)
+is what the demo actually uses and has confirmed working — it's a direct DI registration, not something routed
+through a Mediator-specific config API, so it doesn't depend on any Mediator builder method beyond what real
+ag-kit's <code>AddMediator</code> call already sets up.
+</div>
+
+<h3><span class="step-badge">5</span>Add <code>ICacheableQuery</code> to each Get/List query</h3>
+<p>For each of the 3 entities' single-record Get query and List query (6 records total: <code>GetAgentQuery</code>,
+<code>GetOfficeQuery</code>, <code>GetCompanyQuery</code>, <code>GetAgentListQuery</code>, <code>GetOfficeListQuery</code>,
+<code>GetCompanyListQuery</code>), the change is the same shape every time. Using the real, current
+<code>GetAgentQuery.cs</code> as the concrete example:</p>
+<table>
+<tr><th>Today (real ag-kit)</th><th>After</th></tr>
+<tr><td><code>public record GetAgentQuery(int? AgentKey, string? SeoName, string? ClientCode) : IRequest&lt;JsonElement?&gt;;</code></td>
+<td><code>public record GetAgentQuery(int? AgentKey, string? SeoName, string? ClientCode) : IRequest&lt;JsonElement?&gt;, ICacheableQuery { ... }</code></td></tr>
+</table>
+<div class="filebox">public record GetAgentQuery(int? AgentKey, string? SeoName, string? ClientCode)
+    : IRequest&lt;JsonElement?&gt;<span class="diff-add">, ICacheableQuery</span>
+<span class="diff-add">{
+    public string? BuildCacheKey() =&gt; CacheKeyBuilder.BuildFromObject(
+        ClientCode, "agent", "get", this, nameof(ClientCode));
+
+    public TimeSpan Ttl =&gt; TimeSpan.FromMinutes(60);        // pick real production values here, not the demo's flat 10 min
+    public TimeSpan RefreshWindow =&gt; TimeSpan.FromMinutes(10);
+}</span>;
+
+public class GetAgentQueryHandler : IRequestHandler&lt;GetAgentQuery, JsonElement?&gt;
+{
+    // unchanged - the real business logic in the handler needs ZERO modification
+}</div>
+<div class="callout warn">
+<b>Record-shape inconsistency to handle:</b> real <code>GetCompanyQuery</code>/<code>GetOfficeQuery</code> use a
+required non-nullable <code>int CompanyKey</code>/<code>int OfficeKey</code> (they throw if <code>&lt;= 0</code>),
+while <code>GetAgentQuery</code> uses a nullable <code>int? AgentKey</code> combined with <code>SeoName</code>. This
+doesn't break <code>BuildFromObject()</code> — reflection works the same either way — but it does mean
+<code>ClientCode</code> vs <code>ClientID</code> naming is inconsistent across the 6 records (confirmed:
+<code>GetAgentListQuery</code>/<code>GetCompanyListQuery</code>/<code>GetOfficeListQuery</code> all use
+<code>ClientID</code>, while the single-Get queries use <code>ClientCode</code>) — make sure each query's
+<code>BuildCacheKey()</code> excludes whichever of the two names that specific record actually has via
+<code>nameof(...)</code>, rather than copy-pasting <code>nameof(ClientCode)</code> everywhere.
+</div>
+<div class="callout good">
+Pick real <code>Ttl</code>/<code>RefreshWindow</code> values deliberately per query type rather than copying the
+demo's flat 10-minute default for everything — the demo used one flat value everywhere purely to make manual testing
+predictable. A sensible starting point echoing typical production tuning: longer TTL for single-record Gets (rarely
+change), shorter TTL for Lists (harder to invalidate precisely, so lean on a shorter natural expiry instead).
+</div>
+
+<h2 id="watcher">4. The missing piece: invalidation needs a watcher</h2>
+<p>Everything above makes reads fast (cache-aside) but does <b>nothing about staleness</b> on its own — a cached
+value only disappears when its TTL runs out, unless something actively deletes the key the moment the underlying
+row changes. In the demo, that "something" is <code>Tools/SandboxWatcher</code>, which only works because the
+sandbox is a private LocalDB copy this demo's own test endpoints write to.</p>
+<div class="callout warn">
+<b>Real ag-kit has no equivalent today, and needs one designed — this isn't a copy-paste step.</b> Real
+<code>idc_ety</code> is written to by some other real system (the CMS/admin tooling), not by EntityManager.Api
+itself (EntityManager.Api is GET-only, matching real DB permissions). Whatever writes to <code>idc_ety</code> is
+the thing that needs to trigger invalidation — EntityManager doesn't control it.
+</div>
+<p>Two realistic options, in order of how close they are to what the demo already proves works:</p>
+<table>
+<tr><th>Option</th><th>How it would work</th><th>Trade-off</th></tr>
+<tr><td><b>A. Polling watcher</b><br>(same technique as <code>SandboxWatcher</code>)</td>
+<td>A small standalone background service polls <code>idc_ety</code> every few seconds for rows where
+<code>LASTMODIFIED &gt; last checkpoint</code>, and for each one, calls <code>CacheKeyBuilder.Build(...)</code> with
+that row's own <code>ClientCode</code>+business key to reconstruct the exact Redis key, then deletes it (optionally
+refilling it immediately via an internal refresh endpoint, exactly like the demo does).</td>
+<td>Simple, proven (this demo validates the whole mechanism against real query shapes), but polling — some
+unavoidable delay between the real write and invalidation, and a continuous background query load on <code>idc_ety</code>.</td></tr>
+<tr><td><b>B. Change Data Capture / eventing</b></td>
+<td>If the team that owns the write side of <code>idc_ety</code> can publish a change event (SQL Server CDC,
+a message bus, a webhook) whenever a row changes, a listener consumes that event and invalidates the matching key
+immediately instead of polling.</td>
+<td>Lower latency, no continuous polling load — but requires buy-in and work from whoever owns the write path,
+which is outside EntityManager's control.</td></tr>
+</table>
+<p>Whichever option is chosen, it also needs the second half already proven in the demo: a consumer that drains
+<code>ety:refresh:queue</code> (the stream <code>CachingPipelineBehavior</code> pushes onto on near-expiry HITs) and
+proactively refreshes those keys — otherwise near-expiry entries in real production just sit unread and expire
+normally, same as if the Stale-While-Revalidate half of the pattern didn't exist. The refresh logic itself needs no
+new code: it's the same "reconstruct the query from the key, run the real handler, write the result back to Redis"
+approach as <code>InternalCacheEndpoints.cs</code> in the demo — that endpoint (or an equivalent) needs to exist in
+real ag-kit too, for the watcher to call.</p>
+
+<h2 id="risks">5. Known risks and a pre-existing issue worth fixing alongside this</h2>
+<div class="callout warn">
+<b>Confirmed real, pre-existing inconsistency</b> in <code>AgentRepository.cs</code> — <code>GetAgentDetail</code>
+(backing the single <code>/Agent/get</code>) filters <code>IsDisplayedOnWebsite = true</code> and inner-joins
+Office+Company (excluding an agent entirely if either join fails). <code>GetAgentList</code> (backing
+<code>/Agent/list</code>) filters neither — it queries the flat <code>Agent</code> table with no
+<code>IsDisplayedOnWebsite</code> check and no join at all.
+</div>
+<p>This matters specifically <i>because</i> of caching: today, without caching, this inconsistency just means a
+list result can include an agent whose individual page 404s. Once caching is introduced, the same inconsistency
+becomes an invalidation-precision problem too — a list-cache entry could keep referencing an agent that a real
+production write later excludes from individual lookup, and nothing about the caching layer itself would flag this
+as wrong. The demo fixed this in its own <code>AgentRepository.GetAgentList()</code> by adding the same
+<code>IsDisplayedOnWebsite</code> filter and the same existence-check joins <code>GetAgentDetail</code> already
+applies — worth doing the same in real ag-kit before or alongside rolling out caching, not after.</p>
+
+<div class="callout good">
+<b>Recommended rollout order:</b> (1) build out <code>Ag.Cache</code> and wire the pipeline behavior with zero
+queries opted in yet — this is a safe, no-behavior-change deploy, since <code>ICacheableQuery</code> won't exist on
+anything. (2) Opt in the single-record Get queries first (lowest invalidation complexity — one row, one key). (3)
+Fix the <code>AgentRepository.GetAgentList</code> inconsistency. (4) Opt in the List queries. (5) Build and deploy
+the watcher (Option A or B above) — caching without invalidation is not safe to leave running unattended for long
+in production, even with a short TTL as a backstop.
+</div>
+
+<div class="footer-note">
+Based on the working demo at <span class="path">entitymanager-caching-demo/EntityManager</span> and real ag-kit
+source read directly from <span class="path">d:\AG\CM\ag-kit</span> at the time of writing. Re-verify file paths and
+current registrations against ag-kit's actual state before implementing, in case the codebase has moved on since.
+</div>
+
+</body>
+</html>

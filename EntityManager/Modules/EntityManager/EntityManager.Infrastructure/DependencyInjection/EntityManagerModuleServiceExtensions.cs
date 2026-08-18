@@ -51,12 +51,12 @@ public static class EntityManagerModuleServiceExtensions
         services.AddScoped<EntityManager.Application.Queries.GetAgentQueryHandler>();
         services.AddScoped<EntityManager.Application.Queries.GetOfficeQueryHandler>();
         services.AddScoped<EntityManager.Application.Queries.GetCompanyQueryHandler>();
-        services.AddScoped<EntityManager.Application.Queries.GetAgentListQueryHandler>();
         services.AddScoped<EntityManager.Application.Queries.GetAgentIdListQueryHandler>();
-        services.AddScoped<EntityManager.Application.Queries.GetOfficeListQueryHandler>();
         services.AddScoped<EntityManager.Application.Queries.GetOfficeIdListQueryHandler>();
-        services.AddScoped<EntityManager.Application.Queries.GetCompanyListQueryHandler>();
         services.AddScoped<EntityManager.Application.Queries.GetCompanyIdListQueryHandler>();
+        services.AddScoped<EntityManager.Application.Queries.GetAgentSuggestionsQueryHandler>();
+        services.AddScoped<EntityManager.Application.Queries.GetOfficeSuggestionsQueryHandler>();
+        services.AddScoped<EntityManager.Application.Queries.GetCompanySuggestionsQueryHandler>();
 
         return services;
     }

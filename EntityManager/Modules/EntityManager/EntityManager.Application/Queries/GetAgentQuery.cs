@@ -14,20 +14,24 @@ using Microsoft.Extensions.Configuration;
 
 namespace EntityManager.Application.Queries;
 
-public record GetAgentQuery(int? AgentKey, string? SeoName, string? ClientCode)
+public record GetAgentQuery(
+    int? AgentKey, string? SeoName, string? ClientCode,
+    string? FirstName = null, string? LastName = null, string? FullName = null, string? Email = null)
     : IRequest<JsonElement?>, ICacheableQuery
 {
     // No ClientCode -> not cacheable for this call (see ICacheableQuery) -
     // otherwise a request that omits it would cache under a fake scope that
     // SandboxWatcher/watcher.js (which only ever knows the row's REAL
     // ClientCode) could never reconstruct a matching key for to invalidate.
-    public string? BuildCacheKey() => string.IsNullOrWhiteSpace(ClientCode) ? null : CacheKeyBuilder.Build(
-        ClientCode, "agent", "get",
-        new Dictionary<string, string?>
-        {
-            ["agentKey"] = AgentKey?.ToString(),
-            ["seoName"] = SeoName
-        });
+    //
+    // Reflection-based: reads AgentKey/SeoName straight off this record
+    // instead of a hand-built dictionary, so a new property added to this
+    // query later is automatically part of the key. ClientCode is excluded
+    // here only because it's already the {clientCode} segment of the key,
+    // not a param - it isn't a general opt-out mechanism (see
+    // CacheKeyIgnoreAttribute for that).
+    public string? BuildCacheKey() => CacheKeyBuilder.BuildFromObject(
+        ClientCode, "agent", "get", this, nameof(ClientCode));
 
     // Flat 10 min locally for every cacheable query, get and list alike -
     // real production values differ per query type (60 min / 10 min for get,
@@ -49,13 +53,14 @@ public class GetAgentQueryHandler : IRequestHandler<GetAgentQuery, JsonElement?>
 
     public async ValueTask<JsonElement?> Handle(GetAgentQuery request, CancellationToken cancellationToken)
     {
-        if (!request.AgentKey.HasValue && string.IsNullOrWhiteSpace(request.SeoName))
-            throw new ArgumentException("Either AgentKey or SeoName is required");
-
         var agent = await agentRepository.GetAgentDetail(
             request.AgentKey,
             request.SeoName,
             request.ClientCode,
+            request.FirstName,
+            request.LastName,
+            request.FullName,
+            request.Email,
             cancellationToken);
 
         if (agent == null || string.IsNullOrWhiteSpace(agent.RawJson))

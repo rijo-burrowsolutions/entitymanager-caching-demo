@@ -10,17 +10,14 @@ using Ag.Cache;
 namespace EntityManager.Application.Queries;
 
 public record GetCompanyQuery(
-    int CompanyKey,
-    string? ClientCode)
+    int? CompanyKey,
+    string? ClientCode,
+    string? CompanyName = null, string? Email = null)
     : IRequest<JsonElement?>, ICacheableQuery
 {
-    // See GetAgentQuery.cs - no ClientCode means not cacheable for this call.
-    public string? BuildCacheKey() => string.IsNullOrWhiteSpace(ClientCode) ? null : CacheKeyBuilder.Build(
-        ClientCode, "company", "get",
-        new Dictionary<string, string?>
-        {
-            ["companyKey"] = CompanyKey.ToString()
-        });
+    // Reflection-based - see GetAgentQuery.cs for the full reasoning.
+    public string? BuildCacheKey() => CacheKeyBuilder.BuildFromObject(
+        ClientCode, "company", "get", this, nameof(ClientCode));
 
     // Flat 10 min locally for every cacheable query - see GetAgentQuery.cs.
     public TimeSpan Ttl => TimeSpan.FromMinutes(10);
@@ -44,12 +41,18 @@ public class GetCompanyQueryHandler
         GetCompanyQuery request,
         CancellationToken cancellationToken)
     {
-        if (request.CompanyKey <= 0)
-            throw new ArgumentException("CompanyKey is required");
+        if (!request.CompanyKey.HasValue && string.IsNullOrWhiteSpace(request.CompanyName)
+            && string.IsNullOrWhiteSpace(request.Email))
+            throw new ArgumentException("At least one of CompanyKey, CompanyName or Email is required");
+
+        if (request.CompanyKey is <= 0)
+            throw new ArgumentException("CompanyKey must be a positive number");
 
         var company = await companyRepository.GetCompany(
             request.CompanyKey,
             request.ClientCode,
+            request.CompanyName,
+            request.Email,
             cancellationToken);
 
         if (company == null || string.IsNullOrWhiteSpace(company.RawJson))
