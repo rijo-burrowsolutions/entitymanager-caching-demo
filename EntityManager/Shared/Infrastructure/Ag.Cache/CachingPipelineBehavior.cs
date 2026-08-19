@@ -83,6 +83,21 @@ public sealed class CachingPipelineBehavior<TRequest, TResponse>
         // Save the fresh result so the next request for this exact key is a HIT.
         await db.StringSetAsync(key, JsonSerializer.Serialize(result, JsonSerializerOptions.Web), cacheable.Ttl);
         Console.WriteLine($"[cache] STORE {key}  (TTL {cacheable.Ttl.TotalSeconds:F0}s)");
+
+        // Track this key under a reverse index keyed by the row's own business
+        // key (when the key carries one), so an invalidator that only knows
+        // "AgentKey 150 changed" can still find and clear every other filter
+        // combination (email=, firstName=, etc.) cached for that same row -
+        // see CacheKeyBuilder.IndexKeyFor for why this can't be derived from
+        // the row's current data alone. Expiry mirrors the data key's own TTL
+        // so the index entry never outlives what it's indexing.
+        var indexKey = CacheKeyBuilder.IndexKeyFor(key);
+        if (indexKey is not null)
+        {
+            await db.SetAddAsync(indexKey, key);
+            await db.KeyExpireAsync(indexKey, cacheable.Ttl);
+        }
+
         return result;
     }
 }

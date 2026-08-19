@@ -164,16 +164,40 @@ async Task CheckTableAsync(string table, string businessKeyColumn, string entity
             var cacheKey = CacheKeyBuilder.Build(row.ClientCode, entity, "get",
                 new Dictionary<string, string?> { [$"{entity}key"] = row.BusinessKey.ToString() });
 
-            // Only refill if the key actually existed - otherwise this would
+            // Look up every OTHER key shape (email=, firstName=, seoName=,
+            // etc.) ever cached for this same row via the reverse index
+            // CachingPipelineBehavior maintains, not just the plain key this
+            // watcher already knows how to rebuild - see
+            // CacheKeyBuilder.IndexKeyFor for why those can't be derived from
+            // the row's current data alone.
+            var indexKey = CacheKeyBuilder.IndexKey(entity, row.BusinessKey.ToString());
+            var relatedKeys = (await db.SetMembersAsync(indexKey))
+                .Select(v => (string)v!)
+                .ToHashSet();
+            relatedKeys.Add(cacheKey);
+
+            // Only refill if a key actually existed - otherwise this would
             // manufacture a brand-new cache entry for a row nobody has ever
             // queried, which isn't invalidation, it's cache warming for demand
             // that doesn't exist.
-            var existed = await db.KeyDeleteAsync(cacheKey);
-            if (existed)
+            var anyExisted = false;
+            foreach (var related in relatedKeys)
             {
-                Console.WriteLine($"[sandbox-watcher] invalidated {cacheKey}");
-                await RefreshCacheAsync(cacheKey);
+                if (await db.KeyDeleteAsync(related))
+                {
+                    anyExisted = true;
+                    Console.WriteLine($"[sandbox-watcher] invalidated {related}");
+                }
             }
+            await db.KeyDeleteAsync(indexKey);
+
+            // Only the plain {entity}key shape is eagerly refilled - the other
+            // variants are left to repopulate lazily on the next real request
+            // for that specific filter combination, rather than re-running a
+            // query for every filter combination that happened to be cached
+            // before.
+            if (anyExisted)
+                await RefreshCacheAsync(cacheKey);
         }
 
         if (row.LastModified > maxSeen)

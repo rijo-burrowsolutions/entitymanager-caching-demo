@@ -88,4 +88,41 @@ public static class CacheKeyBuilder
         // the watcher, always land on the exact same key.
         return $"ety:{clientCode.ToUpperInvariant()}:{entity}:{operation}:{paramPart}";
     }
+
+    // A single row's data can end up cached under many different key shapes -
+    // "agentkey=150", "agentkey=150&firstname=abbie", "email=x@y.com" - one
+    // per distinct filter combination a caller happened to use. When the row
+    // changes, whoever's invalidating only knows the row's real business key
+    // (e.g. AgentKey=150); it has no way to look up which of those other key
+    // shapes exist in Redis, since some of them (email=, firstname=...) were
+    // built from values that may no longer match anything in the database.
+    // This index key names a Redis Set that CachingPipelineBehavior adds every
+    // such key into (whenever the key includes "{entity}key=", i.e. the
+    // caller's business key was known), so SandboxWatcher can look up and
+    // invalidate every shape ever cached for that row - not just the one
+    // shape it knows how to rebuild itself.
+    public static string IndexKey(string entity, string businessKey) =>
+        $"ety:index:{entity}:{businessKey.ToLowerInvariant()}";
+
+    // Extracts the IndexKey for a fully-built cache key, if it carries the
+    // entity's own business key as one of its params - returns null for keys
+    // built purely from other filters (e.g. email-only lookups with no
+    // AgentKey supplied), which simply can't be indexed this way since the
+    // row they resolve to isn't known until the query actually runs.
+    public static string? IndexKeyFor(string cacheKey)
+    {
+        var parts = cacheKey.Split(':');
+        if (parts.Length != 5 || parts[0] != "ety")
+            return null;
+
+        var entity = parts[2];
+        foreach (var pair in parts[4].Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var kv = pair.Split('=', 2);
+            if (kv.Length == 2 && kv[0] == $"{entity}key")
+                return IndexKey(entity, kv[1]);
+        }
+
+        return null;
+    }
 }
